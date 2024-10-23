@@ -23,6 +23,23 @@ var users = []user{
 	{ID: "7", Name: "Janez", Surname: "Možina"},
 }
 
+type book struct {
+	ID       string `json:"id"`
+	Title    string `json:"title"`
+	Quantity string `json:"quantity"`
+}
+
+var books = []book{
+	{ID: "1", Title: "Don Quixote", Quantity: "15"},
+	{ID: "2", Title: "A Tale of Two Cities", Quantity: "20"},
+	{ID: "3", Title: "War and Peace", Quantity: "12"},
+	{ID: "4", Title: "Moby-Dick", Quantity: "18"},
+	{ID: "5", Title: "The Count of Monte Cristo", Quantity: "22"},
+	{ID: "6", Title: "Jane Eyre", Quantity: "15"},
+	{ID: "7", Title: "Wuthering Heights", Quantity: "10"},
+	{ID: "8", Title: "Great Expectations", Quantity: "25"},
+}
+
 func greet(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a request at path /")
 	w.Write([]byte("Welcome Library Link user. See /docs for more information."))
@@ -45,11 +62,25 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 	w.Write(usersJSON)
 }
 
+func getBooks(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received a request at path /books")
+
+	booksJSON, err := json.Marshal(books)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write(booksJSON)
+}
+
 func main() {
 	router := http.NewServeMux()
 
 	router.HandleFunc("GET /", greet)
 	router.HandleFunc("GET /users", getUsers)
+	router.HandleFunc("GET /books", getBooks)
 
 	server := http.Server{
 		Addr:    ":8081",

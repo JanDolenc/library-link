@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 )
 
 type user struct {
@@ -62,6 +63,37 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 	w.Write(usersJSON)
 }
 
+func createUser(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received a POST request at path /users \n")
+
+	queryParams := r.URL.RawQuery
+
+	// log.Println("raw query values:", queryParams)
+
+	queryParamsMap, err := url.ParseQuery(queryParams)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if queryParamsMap["name"] == nil || queryParamsMap["name"][0] == "" {
+		http.Error(w, "Error: Mising query parameter. Parameter 'name' is required and must have a non empty value.", http.StatusInternalServerError)
+		return
+	}
+
+	if queryParamsMap["surname"] == nil || queryParamsMap["surname"][0] == "" {
+		http.Error(w, "Error: Mising query parameter. Parameter 'surname' is required and must have a non empty value.", http.StatusInternalServerError)
+		return
+	}
+
+	log.Println("queryParamsMap", queryParamsMap)
+	log.Println("accesing map value", queryParamsMap["name"], len(queryParamsMap["name"]))
+	log.Printf("type of queryParamsMap[name] %T, %T, %v", queryParamsMap["name"], queryParamsMap["name"][0], len(queryParamsMap["name"][0]))
+
+	log.Println("Hello", queryParamsMap["name"][0], queryParamsMap["surname"][0], "! You are now a registered user of Library Link.")
+}
+
 func getBooks(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a request at path /books")
 
@@ -80,6 +112,7 @@ func main() {
 
 	router.HandleFunc("GET /", greet)
 	router.HandleFunc("GET /users", getUsers)
+	router.HandleFunc("POST /users", createUser)
 	router.HandleFunc("GET /books", getBooks)
 
 	server := http.Server{

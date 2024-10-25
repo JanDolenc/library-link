@@ -1,6 +1,6 @@
 services:
   database:
-    image: postgres
+    image: ${DATABASE_IMAGE}
     container_name: database
     restart: unless-stopped
     shm_size: 128mb

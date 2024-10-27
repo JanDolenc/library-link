@@ -1,11 +1,16 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/joho/godotenv"
 )
 
 type user struct {
@@ -107,6 +112,32 @@ func getBooks(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
+	// load environment variables from file
+	err := godotenv.Load("../.env")
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	fmt.Printf("Database url: %v\n", os.Getenv("DATABASE_URL"))
+
+	// connect to db with pgx - postgres driver
+	ctx := context.Background()
+	conn, err := pgx.Connect(ctx, os.Getenv("DATABASE_URL"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
+		os.Exit(1)
+	}
+	defer conn.Close(ctx)
+
+	// Test query
+	var greeting string
+	err = conn.QueryRow(ctx, "select 'Hello World!'").Scan(&greeting)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "QueryRow failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(greeting)
+
 	router := http.NewServeMux()
 
 	router.HandleFunc("GET /", greet)

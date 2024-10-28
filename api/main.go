@@ -16,19 +16,13 @@ import (
 var db *pgx.Conn
 
 type user struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Surname string `json:"surname"`
+	ID         string `json:"id"`
+	First_name string `json:"name"`
+	Last_name  string `json:"surname"`
 }
 
-var users = []user{
-	{ID: "1", Name: "Jan", Surname: "Dolenc"},
-	{ID: "2", Name: "Manca", Surname: "Cater"},
-	{ID: "3", Name: "Ajda", Surname: "Maček"},
-	{ID: "4", Name: "Marko", Surname: "Pisk"},
-	{ID: "5", Name: "Rok", Surname: "Puntar"},
-	{ID: "6", Name: "Boštjan", Surname: "Dolenec"},
-	{ID: "7", Name: "Janez", Surname: "Možina"},
+type usersResponse struct {
+	Users []user `json:"users"`
 }
 
 type book struct {
@@ -53,21 +47,33 @@ func greet(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Welcome Library Link user. See /docs for more information."))
 }
 
+func queryForUsers() ([]user, error) {
+	rows, _ := db.Query(context.Background(), "SELECT * FROM users")
+	users, err := pgx.CollectRows(rows, pgx.RowToStructByName[user])
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to query users: %w", err)
+	}
+
+	return users, nil
+}
+
 func getUsers(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a GET request at path /users")
 
-	// convert slice to json format
-	usersJSON, err := json.Marshal(users)
+	users, err := queryForUsers()
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	response := usersResponse{
+		Users: users,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-
-	// Set header Content-Type
-	w.Header().Set("Content-Type", "application/json")
-
-	// Write the JSON repsonse to the client
-	w.Write(usersJSON)
 }
 
 func createUser(w http.ResponseWriter, r *http.Request) {

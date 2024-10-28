@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 
 	"github.com/jackc/pgx/v5"
@@ -17,6 +16,11 @@ var db *pgx.Conn
 
 type user struct {
 	ID         string `json:"id"`
+	First_name string `json:"name"`
+	Last_name  string `json:"surname"`
+}
+
+type newUser struct {
 	First_name string `json:"name"`
 	Last_name  string `json:"surname"`
 }
@@ -69,33 +73,45 @@ func getUsers(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func createUser(w http.ResponseWriter, r *http.Request) {
-	log.Println("Received a POST request at path /users \n")
-
-	queryParams := r.URL.RawQuery
-	queryParamsMap, err := url.ParseQuery(queryParams)
+func insertUser(user newUser) error {
+	_, err := db.Exec(context.Background(), "INSERT INTO users (first_name, last_name) VALUES($1, $2)", user.First_name, user.Last_name)
 
 	if err != nil {
+		return fmt.Errorf("Unable to insert row: %w", err)
+	}
+
+	return nil
+}
+
+func createUser(w http.ResponseWriter, r *http.Request) {
+	log.Println("Received a POST request at path /users")
+
+	var user newUser
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	if user.First_name == "" {
+		http.Error(w, "Error: Property 'name' is required to create a new user and must have a non empty value.", http.StatusBadRequest)
+		return
+	}
+	if user.Last_name == "" {
+		http.Error(w, "Error: Property 'surname' is required to create a new user and must have a non empty value.", http.StatusBadRequest)
 		return
 	}
 
-	if queryParamsMap["name"] == nil || queryParamsMap["name"][0] == "" {
-		http.Error(w, "Error: Mising query parameter. Parameter 'name' is required and must have a non empty value.", http.StatusBadRequest)
+	log.Printf("Creating new user: Name %s, Surname %s\n", user.First_name, user.Last_name)
+
+	if err := insertUser(user); err != nil {
+		log.Printf("Failed inserting new user. %v\n", err)
+		http.Error(w, "Error: Could not insert the new user", http.StatusInternalServerError)
 		return
 	}
-
-	if queryParamsMap["surname"] == nil || queryParamsMap["surname"][0] == "" {
-		http.Error(w, "Error: Mising query parameter. Parameter 'surname' is required and must have a non empty value.", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("Creating new user: Name %s, Surname %s\n", queryParamsMap["name"][0], queryParamsMap["surname"][0])
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": fmt.Sprintf("User %s %s created successfully", queryParamsMap["name"][0], queryParamsMap["surname"][0]),
+		"message": fmt.Sprintf("User %s %s created successfully", user.First_name, user.Last_name),
 	})
 }
 

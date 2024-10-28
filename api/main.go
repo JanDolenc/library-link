@@ -31,15 +31,8 @@ type book struct {
 	Quantity string `json:"quantity"`
 }
 
-var books = []book{
-	{ID: "1", Title: "Don Quixote", Quantity: "15"},
-	{ID: "2", Title: "A Tale of Two Cities", Quantity: "20"},
-	{ID: "3", Title: "War and Peace", Quantity: "12"},
-	{ID: "4", Title: "Moby-Dick", Quantity: "18"},
-	{ID: "5", Title: "The Count of Monte Cristo", Quantity: "22"},
-	{ID: "6", Title: "Jane Eyre", Quantity: "15"},
-	{ID: "7", Title: "Wuthering Heights", Quantity: "10"},
-	{ID: "8", Title: "Great Expectations", Quantity: "25"},
+type booksResponse struct {
+	Books []book `json:"books"`
 }
 
 func greet(w http.ResponseWriter, r *http.Request) {
@@ -106,17 +99,35 @@ func createUser(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func queryForBooks() ([]book, error) {
+	rows, _ := db.Query(context.Background(), "SELECT * FROM books WHERE quantity != 0")
+	books, err := pgx.CollectRows(rows, pgx.RowToStructByName[book])
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to query books: %w", err)
+	}
+
+	return books, nil
+}
+
 func getBooks(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a GET request at path /books")
 
-	booksJSON, err := json.Marshal(books)
+	books, err := queryForBooks()
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	}
+
+	response := booksResponse{
+		Books: books,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(booksJSON)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func initDB() error {

@@ -13,6 +13,8 @@ import (
 	"github.com/joho/godotenv"
 )
 
+var db *pgx.Conn
+
 type user struct {
 	ID      string `json:"id"`
 	Name    string `json:"name"`
@@ -111,26 +113,33 @@ func getBooks(w http.ResponseWriter, r *http.Request) {
 	w.Write(booksJSON)
 }
 
+func initDB() error {
+	var err error
+	// connect to db with pgx - postgres driver
+	db, err = pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return fmt.Errorf("Unable to connect to database %w", err)
+	}
+	return nil
+}
+
 func main() {
 	// load environment variables from file
 	err := godotenv.Load("../.env")
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
-	fmt.Printf("Database url: %v\n", os.Getenv("DATABASE_URL"))
+	// log.Printf("Database url: %v\n", os.Getenv("DATABASE_URL"))
 
-	// connect to db with pgx - postgres driver
-	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, os.Getenv("DATABASE_URL"))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Unable to connect to database: %v\n", err)
+	if err := initDB(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize db: %v\n", err)
 		os.Exit(1)
 	}
-	defer conn.Close(ctx)
+	defer db.Close(context.Background())
 
 	// Test query
 	var greeting string
-	err = conn.QueryRow(ctx, "select 'Hello World!'").Scan(&greeting)
+	err = db.QueryRow(context.Background(), "select 'Hello, world!'").Scan(&greeting)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "QueryRow failed: %v\n", err)
 		os.Exit(1)

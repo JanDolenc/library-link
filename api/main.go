@@ -1,27 +1,32 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
+	"os"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/joho/godotenv"
 )
 
+var db *pgx.Conn
+
 type user struct {
-	ID      string `json:"id"`
-	Name    string `json:"name"`
-	Surname string `json:"surname"`
+	ID         string `json:"id"`
+	First_name string `json:"name"`
+	Last_name  string `json:"surname"`
 }
 
-var users = []user{
-	{ID: "1", Name: "Jan", Surname: "Dolenc"},
-	{ID: "2", Name: "Manca", Surname: "Cater"},
-	{ID: "3", Name: "Ajda", Surname: "Maček"},
-	{ID: "4", Name: "Marko", Surname: "Pisk"},
-	{ID: "5", Name: "Rok", Surname: "Puntar"},
-	{ID: "6", Name: "Boštjan", Surname: "Dolenec"},
-	{ID: "7", Name: "Janez", Surname: "Možina"},
+type newUser struct {
+	First_name string `json:"name"`
+	Last_name  string `json:"surname"`
+}
+
+type usersResponse struct {
+	Users []user `json:"users"`
 }
 
 type book struct {
@@ -30,15 +35,8 @@ type book struct {
 	Quantity string `json:"quantity"`
 }
 
-var books = []book{
-	{ID: "1", Title: "Don Quixote", Quantity: "15"},
-	{ID: "2", Title: "A Tale of Two Cities", Quantity: "20"},
-	{ID: "3", Title: "War and Peace", Quantity: "12"},
-	{ID: "4", Title: "Moby-Dick", Quantity: "18"},
-	{ID: "5", Title: "The Count of Monte Cristo", Quantity: "22"},
-	{ID: "6", Title: "Jane Eyre", Quantity: "15"},
-	{ID: "7", Title: "Wuthering Heights", Quantity: "10"},
-	{ID: "8", Title: "Great Expectations", Quantity: "25"},
+type booksResponse struct {
+	Books []book `json:"books"`
 }
 
 func greet(w http.ResponseWriter, r *http.Request) {
@@ -46,67 +44,142 @@ func greet(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte("Welcome Library Link user. See /docs for more information."))
 }
 
+func queryForUsers() ([]user, error) {
+	rows, _ := db.Query(context.Background(), "SELECT * FROM users")
+	users, err := pgx.CollectRows(rows, pgx.RowToStructByName[user])
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to query users: %w", err)
+	}
+
+	return users, nil
+}
+
 func getUsers(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a GET request at path /users")
 
-	// convert slice to json format
-	usersJSON, err := json.Marshal(users)
+	users, err := queryForUsers()
 	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	response := usersResponse{
+		Users: users,
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(response); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+}
 
-	// Set header Content-Type
-	w.Header().Set("Content-Type", "application/json")
+func insertUser(user newUser) error {
+	_, err := db.Exec(context.Background(), "INSERT INTO users (first_name, last_name) VALUES($1, $2)", user.First_name, user.Last_name)
 
-	// Write the JSON repsonse to the client
-	w.Write(usersJSON)
+	if err != nil {
+		return fmt.Errorf("Unable to insert row: %w", err)
+	}
+
+	return nil
 }
 
 func createUser(w http.ResponseWriter, r *http.Request) {
-	log.Println("Received a POST request at path /users \n")
+	log.Println("Received a POST request at path /users")
 
-	queryParams := r.URL.RawQuery
-	queryParamsMap, err := url.ParseQuery(queryParams)
-
-	if err != nil {
+	var user newUser
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+
+	if user.First_name == "" {
+		http.Error(w, "Error: Property 'name' is required to create a new user and must have a non empty value.", http.StatusBadRequest)
+		return
+	}
+	if user.Last_name == "" {
+		http.Error(w, "Error: Property 'surname' is required to create a new user and must have a non empty value.", http.StatusBadRequest)
 		return
 	}
 
-	if queryParamsMap["name"] == nil || queryParamsMap["name"][0] == "" {
-		http.Error(w, "Error: Mising query parameter. Parameter 'name' is required and must have a non empty value.", http.StatusBadRequest)
+	log.Printf("Creating new user: Name %s, Surname %s\n", user.First_name, user.Last_name)
+
+	if err := insertUser(user); err != nil {
+		log.Printf("Failed inserting new user. %v\n", err)
+		http.Error(w, "Error: Could not insert the new user", http.StatusInternalServerError)
 		return
 	}
-
-	if queryParamsMap["surname"] == nil || queryParamsMap["surname"][0] == "" {
-		http.Error(w, "Error: Mising query parameter. Parameter 'surname' is required and must have a non empty value.", http.StatusBadRequest)
-		return
-	}
-
-	log.Printf("Creating new user: Name %s, Surname %s\n", queryParamsMap["name"][0], queryParamsMap["surname"][0])
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]string{
-		"message": fmt.Sprintf("User %s %s created successfully", queryParamsMap["name"][0], queryParamsMap["surname"][0]),
+		"message": fmt.Sprintf("User %s %s created successfully", user.First_name, user.Last_name),
 	})
+}
+
+func queryForBooks() ([]book, error) {
+	rows, _ := db.Query(context.Background(), "SELECT * FROM books WHERE quantity != 0")
+	books, err := pgx.CollectRows(rows, pgx.RowToStructByName[book])
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to query books: %w", err)
+	}
+
+	return books, nil
 }
 
 func getBooks(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a GET request at path /books")
 
-	booksJSON, err := json.Marshal(books)
+	books, err := queryForBooks()
+
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	}
+
+	response := booksResponse{
+		Books: books,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	w.Write(booksJSON)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
+func initDB() error {
+	var err error
+	// connect to db with pgx - postgres driver
+	db, err = pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	if err != nil {
+		return fmt.Errorf("Unable to connect to database %w", err)
+	}
+	return nil
 }
 
 func main() {
+	// load environment variables from file
+	err := godotenv.Load("../.env")
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+	// log.Printf("Database url: %v\n", os.Getenv("DATABASE_URL"))
+
+	if err := initDB(); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to initialize db: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close(context.Background())
+
+	// Test query
+	var greeting string
+	err = db.QueryRow(context.Background(), "select 'Hello, world!'").Scan(&greeting)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "QueryRow failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Println(greeting)
+
 	router := http.NewServeMux()
 
 	router.HandleFunc("GET /", greet)

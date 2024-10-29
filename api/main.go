@@ -41,7 +41,7 @@ type booksResponse struct {
 
 func greet(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a GET request at path /")
-	w.Write([]byte("Welcome Library Link user. See /docs for more information."))
+	w.Write([]byte("Welcome Library Link user."))
 }
 
 func queryForUsers() ([]user, error) {
@@ -175,16 +175,6 @@ func main() {
 		os.Exit(1)
 	}
 	defer db.Close(context.Background())
-
-	// Test query
-	var greeting string
-	err = db.QueryRow(context.Background(), "select 'Hello, world!'").Scan(&greeting)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "QueryRow failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println(greeting)
 
 	router := http.NewServeMux()
 

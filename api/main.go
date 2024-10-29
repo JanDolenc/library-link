@@ -41,7 +41,7 @@ type booksResponse struct {
 
 func greet(w http.ResponseWriter, r *http.Request) {
 	log.Println("Received a GET request at path /")
-	w.Write([]byte("Welcome Library Link user. See /docs for more information."))
+	w.Write([]byte("Welcome Library Link user."))
 }
 
 func queryForUsers() ([]user, error) {
@@ -147,9 +147,17 @@ func getBooks(w http.ResponseWriter, r *http.Request) {
 }
 
 func initDB() error {
+	user := os.Getenv("POSTGRES_USER")
+	password := os.Getenv("POSTGRES_PASSWORD")
+	host := os.Getenv("HOST_DB")
+	port := os.Getenv("PORT_DB")
+	database := os.Getenv("POSTGRES_DB")
+
+	database_url := fmt.Sprintf("postgres://%s:%s@%s:%s/%s", user, password, host, port, database)
+
 	var err error
 	// connect to db with pgx - postgres driver
-	db, err = pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	db, err = pgx.Connect(context.Background(), database_url)
 	if err != nil {
 		return fmt.Errorf("Unable to connect to database %w", err)
 	}
@@ -157,28 +165,16 @@ func initDB() error {
 }
 
 func main() {
-	// load environment variables from file
-	err := godotenv.Load("../.env")
-	if err != nil {
-		log.Fatal("Error loading .env file")
+	// load environment variables from file - for running on localhost
+	if err := godotenv.Load("../.env"); err != nil {
+		log.Printf("Important for LOCALHOST. Failed to load .env file. %v If running in Docker you can ignore this.\n\n", err)
 	}
-	// log.Printf("Database url: %v\n", os.Getenv("DATABASE_URL"))
 
 	if err := initDB(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to initialize db: %v\n", err)
 		os.Exit(1)
 	}
 	defer db.Close(context.Background())
-
-	// Test query
-	var greeting string
-	err = db.QueryRow(context.Background(), "select 'Hello, world!'").Scan(&greeting)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "QueryRow failed: %v\n", err)
-		os.Exit(1)
-	}
-
-	fmt.Println(greeting)
 
 	router := http.NewServeMux()
 
@@ -187,11 +183,13 @@ func main() {
 	router.HandleFunc("POST /users", createUser)
 	router.HandleFunc("GET /books", getBooks)
 
+	apiPort := os.Getenv("PORT_API")
+	apiPortHost := os.Getenv("HOST_PORT_API")
 	server := http.Server{
-		Addr:    ":8081",
+		Addr:    fmt.Sprintf(":%s", apiPort),
 		Handler: router,
 	}
 
-	fmt.Println("Starting server on port :8081")
+	fmt.Printf("Starting server on port :%s->%s\n", apiPortHost, apiPort)
 	server.ListenAndServe()
 }

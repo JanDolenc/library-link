@@ -12,9 +12,30 @@ services:
     networks:
       - backend-net
     ports:
-      - "${HOST_DB_PORT}:5432"
+      - "${HOST_PORT_DB}:${PORT_DB}"
     #volumes:
       #  - db-data:/var/lib/postgresql/data
+
+  api:
+    image: ${API_IMAGE}
+    build: ./api
+    container_name: api
+    depends_on:
+      - database
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - HOST_DB=${HOST_DB}
+      - PORT_DB=${PORT_DB}
+      - PORT_API=${PORT_API}
+      - HOST_PORT_API=${HOST_PORT_API}
+    networks:
+      - backend-net
+    ports:
+      - "${HOST_PORT_API}:${PORT_API}"
+
 
 networks:
   backend-net:
